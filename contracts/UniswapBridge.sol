@@ -1,31 +1,36 @@
 // SPDX-License-Identifier: GPL-2.0-only
 // Copyright 2020 Spilsbury Holdings Ltd
 pragma solidity >=0.6.6 <0.8.0;
-pragma experimental ABIEncoderV2;
+pragma abicoder v2;
 
 import {SafeMath} from '@openzeppelin/contracts/math/SafeMath.sol';
 import {IERC20} from '@openzeppelin/contracts/token/ERC20/IERC20.sol';
 
-import {UniswapV2Library} from '@uniswap/v2-periphery/contracts/libraries/UniswapV2Library.sol';
-import {IUniswapV2Router02} from '@uniswap/v2-periphery/contracts/interfaces/IUniswapV2Router02.sol';
+import '@uniswap/v3-periphery/contracts/interfaces/ISwapRouter.sol';
+import '@uniswap/v3-periphery/contracts/libraries/TransferHelper.sol';
+import '@uniswap/v3-periphery/contracts/interfaces/IPeripheryImmutableState.sol';
+import '@uniswap/v3-core/contracts/interfaces/IUniswapV3Factory.sol';
 
 import {IDefiBridge} from './interfaces/IDefiBridge.sol';
 import {Types} from './Types.sol';
-
-// import 'hardhat/console.sol';
 
 contract UniswapBridge is IDefiBridge {
     using SafeMath for uint256;
 
     address public immutable rollupProcessor;
     address public weth;
+    ISwapRouter public immutable swapRouter;
+    IUniswapV3Factory public immutable v3Factory;
+    IPeripheryImmutableState public peripheryState;
+    uint24 public constant poolFee = 3000; //0.3%
 
-    IUniswapV2Router02 router;
-
-    constructor(address _rollupProcessor, address _router) public {
+    constructor(address _rollupProcessor, ISwapRouter _swapRouter, IUniswapV3Factory _v3Factory, IPeripheryImmutableState _peripheryState) public {
         rollupProcessor = _rollupProcessor;
-        router = IUniswapV2Router02(_router);
-        weth = router.WETH();
+        swapRouter = _swapRouter;
+        v3Factory = _v3Factory;
+        peripheryState = _peripheryState;
+
+        weth = peripheryState.WETH9();
     }
 
     receive() external payable {}
@@ -52,26 +57,56 @@ contract UniswapBridge is IDefiBridge {
         isAsync = false;
         uint256[] memory amounts;
         uint256 deadline = block.timestamp;
-        // TODO This should check the pair exists on UNISWAP instead of blindly trying to swap.
 
-        if (inputAssetA.assetType == Types.AztecAssetType.ETH && outputAssetA.assetType == Types.AztecAssetType.ERC20) {
-            address[] memory path = new address[](2);
-            path[0] = weth;
-            path[1] = outputAssetA.erc20Address;
-            amounts = router.swapExactETHForTokens{value: inputValue}(0, path, rollupProcessor, deadline);
-            outputValueA = amounts[1];
+        // This should check the pair exists on UNISWAP
+        address pairExist = v3Factory.getPool(
+            inputAssetA.erc20Address, 
+            outputAssetA.erc20Address, 
+            poolFee);
+        require(pairExist != address(0), "Pair doesn't exist.");
+
+        // This is only for ETH/ERC20 or ERC20/ETH pairs
+        if (
+            inputAssetA.assetType == Types.AztecAssetType.ETH && 
+            outputAssetA.assetType == Types.AztecAssetType.ERC20 )
+        {
+            ISwapRouter.ExactInputSingleParams memory params =
+                ISwapRouter.ExactInputSingleParams({
+                    tokenIn: weth,
+                    tokenOut: outputAssetA.erc20Address,
+                    fee: poolFee,
+                    recipient: msg.sender,
+                    deadline: block.timestamp,
+                    amountIn: inputValue,
+                    amountOutMinimum: 0,
+                    sqrtPriceLimitX96: 0
+                });
+            
+            outputValueA = swapRouter.exactInputSingle(params);
+
         } else if (
-            inputAssetA.assetType == Types.AztecAssetType.ERC20 && outputAssetA.assetType == Types.AztecAssetType.ETH
-        ) {
-            address[] memory path = new address[](2);
-            path[0] = inputAssetA.erc20Address;
-            path[1] = weth;
+            inputAssetA.assetType == Types.AztecAssetType.ERC20 && 
+            outputAssetA.assetType == Types.AztecAssetType.ETH ) 
+        {
             require(
-                IERC20(inputAssetA.erc20Address).approve(address(router), inputValue),
+                IERC20(inputAssetA.erc20Address).approve(address(swapRouter), inputValue),
                 'UniswapBridge: APPROVE_FAILED'
             );
-            amounts = router.swapExactTokensForETH(inputValue, 0, path, rollupProcessor, deadline);
-            outputValueA = amounts[1];
+            ISwapRouter.ExactInputSingleParams memory params =
+                ISwapRouter.ExactInputSingleParams({
+                    tokenIn: inputAssetA.erc20Address,
+                    tokenOut: weth,
+                    fee: poolFee,
+                    recipient: msg.sender,
+                    deadline: block.timestamp,
+                    amountIn: inputValue,
+                    amountOutMinimum: 0,
+                    sqrtPriceLimitX96: 0
+                });
+
+            outputValueA = swapRouter.exactInputSingle(params);
+
+
         } else {
             // TODO what about swapping tokens?
             revert('UniswapBridge: INCOMPATIBLE_ASSET_PAIR');
