@@ -8,31 +8,24 @@ import {IERC20} from '@openzeppelin/contracts/token/ERC20/IERC20.sol';
 
 import '@uniswap/v3-periphery/contracts/interfaces/ISwapRouter.sol';
 import '@uniswap/v3-periphery/contracts/libraries/TransferHelper.sol';
-import '@uniswap/v3-periphery/contracts/interfaces/IPeripheryImmutableState.sol';
 import '@uniswap/v3-core/contracts/interfaces/IUniswapV3Factory.sol';
 
 import {IDefiBridge} from './interfaces/IDefiBridge.sol';
 import {Types} from './Types.sol';
 
-import 'hardhat/console.sol';
-
 contract UniswapBridge is IDefiBridge {
     using SafeMath for uint256;
 
     address public immutable rollupProcessor;
-    address public weth;
+    address public constant weth = 0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2;
     ISwapRouter public immutable swapRouter;
     IUniswapV3Factory public immutable v3Factory;
-    IPeripheryImmutableState public peripheryState;
     uint24 public constant poolFee = 3000; //0.3%
 
-    constructor(address _rollupProcessor, ISwapRouter _swapRouter, IUniswapV3Factory _v3Factory, IPeripheryImmutableState _peripheryState) public {
+    constructor(address _rollupProcessor, ISwapRouter _swapRouter, IUniswapV3Factory _v3Factory) public {
         rollupProcessor = _rollupProcessor;
         swapRouter = _swapRouter;
         v3Factory = _v3Factory;
-        peripheryState = _peripheryState;
-
-        weth = peripheryState.WETH9();
     }
 
     receive() external payable {}
