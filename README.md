@@ -1,42 +1,24 @@
-# UNICode x Aztec Connect
+# Dark-pool DEX: implementation of a private SWAP
 
-![](https://i.imgur.com/ig94Xoa.jpg)
+First, note that this is the smart contract repo, you can find the front-end repo [here](https://github.com/IncrediSwap/IncrediSwap).
 
-## What is Aztec?
+## Introduction to our project
 
 Aztec is a privacy focused L2, that enables cheap private interactions with layer 1 smart contracts and liquidity, via a process called DeFi aggregation. We use advanced zero-knowledge technology "zk-zk rollups" to add privacy and significant gas savings to any layer 1 protocol via Aztec Connect bridges.
 
-#### What is a bridge?
+#### What is a Dark-pool?
 
-A bridge is a layer 1 solidity contract deployed on Mainnet that conforms a DeFi protocol to the interface the Aztec rollup expects. This allows the Aztec rollup contract to interact with the DeFi protocol via the bridge.
+A dark pool is a privately organized financial exchange for trading securities. Dark pools allow investors to trade without exposure until after the trade has been executed and reported. Dark pools are a type of alternative trading system that give certain investors the opportunity to place large orders and make trades without publicly revealing their intentions during the search for a buyer or seller.
 
-A bridge contract models any layer 1 DeFi protocol as an asynchronous asset swap. You can specify up to two input assets and two output assets per bridge.
+Dark pools emerged in the 1980s when the Securities and Exchange Commission (SEC) allowed brokers to transact large blocks of shares. Electronic trading and an SEC ruling in 2007 that was designed to increase competition and cut transaction costs have stimulated an increase in the number of dark pools. Dark pools can charge lower fees than exchanges because they are often housed within a large firm and not necessarily a bank.
 
-#### How does this work?
+Dark-pool DEXes allow users to make large order into small orders to hide trade intent. This privacy is possible using a Layer 2 solution as Aztec Network.
 
-Users who have shielded funds on Aztec can construct a zero-knowledge proof instructing the Aztec rollup contract to make an external L1 contract call.
+#### What is Aztec Network?
 
-Aztec connect works by batching L2 transaction intents on the Aztec Network together in a rollup, and batch executing them against L1 DeFi contracts.
+Aztec is a privacy focused L2, that enables cheap private interactions with layer 1 smart contracts and liquidity, via a process called DeFi aggregation. We use advanced zero-knowledge technology "zk-zk rollups" to add privacy and significant gas savings to any layer 1 protocol via Aztec Connect bridges.
 
-Your task is to use the bridge interface and the Aztec SDK to create a privacy preserving Uniswap V3 dapp.
-
-#### How much does this cost?
-
-Aztec connect transactions can be batched together into one rollup. Each user in the batch has to split the gas cost of the L1 Bridge contract, and the verification of the rollup proof.
-
-The largest batch size is 256 transactions. The cost to verify a rollup is fixed at ~400,000 gas, with a variable amount of gas for each transaction in the batch of ~3,500 gas.
-
-Assuming 256 transactions in a batch each user would pay:
-
-Rollup verification gas cost: `(400,000 / 256) + 3,500= 5062 gas`
-
-Claim rollup verification gas cost: `(400,000 / 256) + 3,500 = 5062 gas`
-
-Uniswap bridge gas cost: `180,000 / 256 = 703 gas`
-
-**Total = ~11,000 gas for a Uniswap trade**
-
-#### What is private?
+##### What is private?
 
 The source of funds for any Aztec Connect transaction is an Aztec shielded asset. When a user interacts with an Aztec Connect bridge contract, their identity is kept hidden, but balances sent to the bridge are public.
 
@@ -44,124 +26,17 @@ The source of funds for any Aztec Connect transaction is an Aztec shielded asset
 
 Rollup providers are incentivised to batch any transaction with the same bridge id. This reduces the cost of the L1 transaction for similar trades. A bridge id consists of:
 
-## Virtual Assets
 
-Aztec uses the concept of virtual assets or position tokens to represent a share of assets held by a bridge contract. This is far more gas efficient than minting ERC20 tokens. These are used when the bridge holds an asset that Aztec doesn't support, i.e. Uniswap Position NFT's or other non-fungible assets.
+## Launch tests
 
-If the output asset of any interaction is specified as virtual, the user will receive encrypted notes on Aztec representing their share of the position, but no tokens or ETH need to be transfered. The position tokens have an `assetId` that is the `interactionNonce` of the DeFi Bridge call. This is globably unique. Virtual assets can be used to construct complex flows, such as entering or exiting LP positions. i.e. One bridge contract can have multiple flows which are triggered using different input assets.
+ ```npm run test``` command simulate a deployment of Uniswap Pool and a swap using aztec bridge contract.
+ 
+ ## Script to intercat with the contract
+ 
+ ```node scripts/demo.js```
+ 
+### Bridge address
+[0xAA6236c6150Cd5e75483C400fBD11B7065c63d52](https://goerli.etherscan.io/address/0xAA6236c6150Cd5e75483C400fBD11B7065c63d52)
 
-## Aux Input Data
-
-This is bridge specific data that can passed through Aztec to the bridge contract.
-
-### Developer Test Network
-
-Aztec's Connect has been deployed to the Goerli testnet in Alpha. Your bridge contract needs to conform to the following interface. If so you can contact us for access to the SDK to create proofs.
-
-#### Bridge Contract Interface
-
-```solidity
-// SPDX-License-Identifier: GPL-2.0-only
-// Copyright 2020 Spilsbury Holdings Ltd
-pragma solidity >=0.6.6 <0.8.0;
-pragma experimental ABIEncoderV2;
-
-interface IDefiBridge {
-  enum AztecAssetType {
-    ETH,
-    ERC20,
-    VIRTUAL
-  }
-
-  struct AztecAsset {
-    uint256 id;
-    address erc20Address;
-    uint256 gas;
-    AztecAssetType assetType;
-  }
-
-  // Input cases:
-  // Case1: 1 real input.
-  // Case2: 1 virtual asset input.
-  // Case3: 1 real 1 virtual input.
-
-  // Output cases:
-  // 1 real
-  // 2 real
-  // 1 real 1 virtual
-  // 1 virtual
-
-  // Example use cases with asset mappings
-  // 1 1: Swapping.
-  // 1 2: Swapping with incentives (2nd output reward token).
-  // 1 3: Borrowing. Lock up collateral, get back loan asset and virtual position asset.
-  // 1 4: Opening lending position OR Purchasing NFT. Input real asset, get back virtual asset representing NFT or position.
-  // 2 1: Selling NFT. Input the virtual asset, get back a real asset.
-  // 2 2: Closing a lending position. Get back original asset and reward asset.
-  // 2 3: Claiming fees from an open position.
-  // 2 4: Voting on a 1 4 case.
-  // 3 1: Repaying a borrow. Return loan plus interest. Get collateral back.
-  // 3 2: Repaying a borrow. Return loan plus interest. Get collateral plus reward token. (AAVE)
-  // 3 3: Partial loan repayment.
-  // 3 4: DAO voting stuff.
-
-  // @dev This function is called from the RollupProcessor.sol contract via the DefiBridgeProxy. It receives the aggreagte sum of all users funds for the input assets.
-  // @param AztecAsset inputAssetA a struct detailing the first input asset, this will always be set
-  // @param AztecAsset inputAssetB an optional struct detailing the second input asset, this is used for repaying borrows and should be virtual
-  // @param AztecAsset outputAssetA a struct detailing the first output asset, this will always be set
-  // @param AztecAsset outputAssetB a struct detailing an optional second output asset
-  // @param uint256 inputValue, the total amount input, if there are two input assets, equal amounts of both assets will have been input
-  // @param uint256 interactionNonce a globally unique identifier for this DeFi interaction. This is used as the assetId if one of the output assets is virtual
-  // @param uint64 auxData other data to be passed into the bridge contract (slippage / nftID etc)
-  // @return uint256 outputValueA the amount of outputAssetA returned from this interaction, should be 0 if async
-  // @return uint256 outputValueB the amount of outputAssetB returned from this interaction, should be 0 if async or bridge only returns 1 asset.
-  // @return bool isAsync a flag to toggle if this bridge interaction will return assets at a later date after some third party contract has interacted with it via finalise()
-
-  function convert(
-    AztecAsset calldata inputAssetA,
-    AztecAsset calldata inputAssetB,
-    AztecAsset calldata outputAssetA,
-    AztecAsset calldata outputAssetB,
-    uint256 inputValue,
-    uint256 interactionNonce,
-    uint64 auxData
-  )
-    external
-    payable
-    returns (
-      uint256 outputValueA,
-      uint256 outputValueB,
-      bool
-    );
-
-  // @dev This function is called from the RollupProcessor.sol contract via the DefiBridgeProxy
-  // @param uint256 interactionNonce
-  function canFinalise(uint256 interactionNonce) external view returns (bool);
-
-  // @dev This function is called from the RollupProcessor.sol contract via the DefiBridgeProxy. It receives the aggreagte sum of all users funds for the input assets.
-  // @param uint256 interactionNonce the unique interaction nonce of an async defi interaction (previous call to convert)
-  // @return uint256 outputValueA the return value of output asset A
-  // @return uint256 outputValueB optional return value of output asset B
-  // @dev this function should have a modifier on it to ensure it can only be called by the Rollup Contract
-  function finalise(uint256 interactionNonce) external payable returns (uint256 outputValueA, uint256 outputValueB);
-}
-
-```
-
-### function convert()
-
-This function is called from the Aztec Rollup Contract via the DeFi Bridge Proxy. Before this function on your bridge contract is called the rollup contract will have sent you ETH or Tokens defined by the input params.
-
-This function should interact with the DeFi protocol e.g Uniswap, and transfer tokens or ETH back to the Aztec Rollup Contract. The Rollup contract will check it received the correct amount.
-
-If the DeFi interaction is ASYNC i.e it does not settle in the same block, the call to convert should return (0,0 true). The contract should record the interaction nonce for any Async position or if virtual assets are returned.
-
-At a later date, this interaction can be finalised by proding the rollup contract to call finalise on the bridge.
-
-### function canFinalise(uint256 interactionNonce)
-
-This function checks to see if an async interaction is ready to settle. It should return true if it is.
-
-### function finalise(uint256 interactionNonce) returns (uint256 outputValueA, uint256 outputValueB)
-
-This function will be called from the Azte Rollup contract. The Aztec rollup contract will check that it received the correct amount of ETH and Tokens specified by the return values, and trigger the settlement step on Aztec.
+### Rollup processor address
+[0x527744dfe29469b811a291C9d401aEC177ca08CC](https://goerli.etherscan.io/address/0x527744dfe29469b811a291C9d401aEC177ca08CC)
