@@ -13,21 +13,23 @@ describe('defi bridge', function () {
   let erc20: Contract;
 
   beforeAll(async () => {
+
     [signer] = await ethers.getSigners();
     signerAddress = await signer.getAddress();
     erc20 = await deployErc20(signer);
-    const univ2 = await deployUniswap(signer);
-    await createPair(signer, univ2, erc20);
+    const univ3 = await deployUniswap(signer);
+    await createPair(signer, univ3, erc20);
 
     bridgeProxy = await DefiBridgeProxy.deploy(signer);
-    uniswapBridgeAddress = await bridgeProxy.deployBridge(signer, abi, [univ2.address]);
-
+    uniswapBridgeAddress = await bridgeProxy.deployBridge(signer, abi, [univ3.address]);
+    console.log(">>>>>>>>>>>> 3.")
     // Bridge proxy can be thought of as the rollup contract. Fund it.
     // TODO: Do for tokens.
     await signer.sendTransaction({
       to: bridgeProxy.address,
       value: 10000n,
     });
+    console.log(">>>>>>>>>>>> 4.")
   });
 
   it('should swap ETH to ERC20 tokens', async () => {
@@ -52,6 +54,9 @@ describe('defi bridge', function () {
     );
 
     const proxyBalance = BigInt((await erc20.balanceOf(bridgeProxy.address)).toString());
+    console.log("proxy balance:", proxyBalance);
+    console.log("outputValueB:", outputValueB);
+    console.log("isAsync:", isAsync);
     expect(proxyBalance).toBe(outputValueA);
     expect(outputValueB).toBe(0n);
     expect(isAsync).toBe(false);

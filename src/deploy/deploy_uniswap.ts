@@ -1,11 +1,14 @@
 #!/usr/bin/env node
 import { ContractTransaction } from '@ethersproject/contracts';
-import UniswapV2FactoryJson from '@uniswap/v2-core/build/UniswapV2Factory.json';
-import UniswapV2PairJson from '@uniswap/v2-core/build/UniswapV2Pair.json';
-import IWETH from '@uniswap/v2-periphery/build/IWETH.json';
+import UniswapV3FactoryJson from '@uniswap/v3-core/artifacts/contracts/UniswapV3Factory.sol/UniswapV3Factory.json';
+import UniswapV3PoolJson from '@uniswap/v3-core/artifacts/contracts/UniswapV3Pool.sol/UniswapV3Pool.json';
+import IWETH from '@uniswap/v3-periphery/artifacts/contracts/interfaces/external/IWETH9.sol/IWETH9.json';
+//should we keep using the v2 weth9 contract in v3 ??
 import WETH9 from '@uniswap/v2-periphery/build/WETH9.json';
-import UniswapV2Router02Json from '@uniswap/v2-periphery/build/UniswapV2Router02.json';
+import UniswapV3RouterJson from '@uniswap/v3-periphery/artifacts/contracts/SwapRouter.sol/SwapRouter.json';
 import { Contract, ContractFactory, Signer } from 'ethers';
+
+import { abi as IUniswapV3PoolABI } from "@uniswap/v3-core/artifacts/contracts/interfaces/IUniswapV3Pool.sol/IUniswapV3Pool.json";
 
 export const createPair = async (
   owner: Signer,
@@ -14,11 +17,12 @@ export const createPair = async (
   initialTokenSupply = 1000n * 10n ** 18n,
   initialEthSupply = 10n ** 18n,
 ) => {
-  const factory = new Contract(await router.factory(), UniswapV2FactoryJson.abi, owner);
-  const weth = new Contract(await router.WETH(), IWETH.abi, owner);
+
+  const factory = new Contract(await router.factory(), UniswapV3FactoryJson.abi, owner);
+  const weth = new Contract(await router.WETH9(), IWETH.abi, owner);
   const ZERO_ADDRESS = '0x0000000000000000000000000000000000000000';
 
-  if ((await factory.getPair(asset.address, weth.address)) != ZERO_ADDRESS) {
+  if ((await factory.getPool(asset.address, weth.address, 3000)) != ZERO_ADDRESS) {
     console.log(`UniswapPair [${await asset.name()} - WETH] already created.`);
     return;
   }
@@ -30,26 +34,46 @@ export const createPair = async (
   };
 
   console.log(`Create UniswapPair [${await asset.name()} - WETH]...`);
-  await withConfirmation(factory.createPair(asset.address, weth.address));
-  const pairAddress = await factory.getPair(asset.address, weth.address);
-  const pair = new Contract(pairAddress, UniswapV2PairJson.abi, owner);
-  console.log(`Pair contract address: ${pairAddress}`);
 
-  await withConfirmation(asset.mint(pair.address, initialTokenSupply));
+  await withConfirmation(factory.createPool(asset.address, weth.address, 3000));
+  const poolAddress = await factory.getPool(asset.address, weth.address, 3000);
+  const pool = new Contract(poolAddress, IUniswapV3PoolABI, owner);
+  console.log(`Pair contract address: ${poolAddress}`);
+
+  await withConfirmation(asset.mint(pool.address, initialTokenSupply));
 
   await withConfirmation(weth.deposit({ value: initialEthSupply }));
-  await withConfirmation(weth.transfer(pair.address, initialEthSupply));
+  await withConfirmation(weth.transfer(pool.address, initialEthSupply));
 
-  // Don't do this in production.
-  await pair.mint(await owner.getAddress());
+  // // Don't do this in production.
+  const MIN_TICK = -887272;
+  const MAX_TICK = -MIN_TICK;
+
+  await pool.mint(
+    await owner.getAddress(),
+    MIN_TICK,
+    MAX_TICK,
+    initialTokenSupply+initialEthSupply,
+    "0x");
+
+  await factory.mint(
+    await owner.getAddress(),
+    MIN_TICK,
+    MAX_TICK,
+    initialTokenSupply+initialEthSupply,
+    "0x");
+
   console.log(`Initial token supply: ${initialTokenSupply}`);
   console.log(`Initial ETH supply: ${initialEthSupply}`);
+
 };
 
 export const deployUniswap = async (owner: Signer) => {
   console.log('Deploying UniswapFactory...');
-  const UniswapFactory = new ContractFactory(UniswapV2FactoryJson.abi, UniswapV2FactoryJson.bytecode, owner);
-  const factory = await UniswapFactory.deploy(await owner.getAddress());
+  const UniswapFactory = new ContractFactory(UniswapV3FactoryJson.abi, UniswapV3FactoryJson.bytecode, owner);
+  // const owner2 = await owner.getAddress()
+  // console.log("owner: ",owner2)
+  const factory = await UniswapFactory.deploy();
   console.log(`UniswapFactory contract address: ${factory.address}`);
 
   console.log('Deploying WETH...');
@@ -57,10 +81,10 @@ export const deployUniswap = async (owner: Signer) => {
   const weth = await WETHFactory.deploy();
   console.log(`WETH contract address: ${weth.address}`);
 
-  console.log('Deploying UniswapV2Router...');
-  const UniswapV2Router = new ContractFactory(UniswapV2Router02Json.abi, UniswapV2Router02Json.bytecode, owner);
-  const router = await UniswapV2Router.deploy(factory.address, weth.address);
-  console.log(`UniswapV2Router contract address: ${router.address}`);
+  console.log('Deploying UniswapV3Router...');
+  const UniswapV3Router = new ContractFactory(UniswapV3RouterJson.abi, UniswapV3RouterJson.bytecode, owner);
+  const router = await UniswapV3Router.deploy(factory.address, weth.address);
+  console.log(`UniswapV3Router contract address: ${router.address}`);
 
   return router;
 };
