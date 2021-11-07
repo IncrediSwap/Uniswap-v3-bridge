@@ -38,10 +38,11 @@ export const createPair = async (
   await withConfirmation(factory.createPool(asset.address, weth.address, 3000));
   const poolAddress = await factory.getPool(asset.address, weth.address, 3000);
   const pool = new Contract(poolAddress, IUniswapV3PoolABI, owner);
+  await pool.initialize(1000000000000)
+
   console.log(`Pair contract address: ${poolAddress}`);
 
   await withConfirmation(asset.mint(pool.address, initialTokenSupply));
-
   await withConfirmation(weth.deposit({ value: initialEthSupply }));
   await withConfirmation(weth.transfer(pool.address, initialEthSupply));
 
@@ -53,14 +54,7 @@ export const createPair = async (
     await owner.getAddress(),
     MIN_TICK,
     MAX_TICK,
-    initialTokenSupply+initialEthSupply,
-    "0x");
-
-  await factory.mint(
-    await owner.getAddress(),
-    MIN_TICK,
-    MAX_TICK,
-    initialTokenSupply+initialEthSupply,
+    1000000000,
     "0x");
 
   console.log(`Initial token supply: ${initialTokenSupply}`);
