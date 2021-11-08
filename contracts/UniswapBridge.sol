@@ -7,8 +7,8 @@ import {SafeMath} from '@openzeppelin/contracts/math/SafeMath.sol';
 import {IERC20} from '@openzeppelin/contracts/token/ERC20/IERC20.sol';
 
 import '@uniswap/v3-periphery/contracts/interfaces/ISwapRouter.sol';
-import '@uniswap/v3-periphery/contracts/libraries/TransferHelper.sol';
 import '@uniswap/v3-core/contracts/interfaces/IUniswapV3Factory.sol';
+import "@uniswap/v3-periphery/contracts/interfaces/IPeripheryImmutableState.sol";
 
 import {IDefiBridge} from './interfaces/IDefiBridge.sol';
 import {Types} from './Types.sol';
@@ -17,15 +17,17 @@ contract UniswapBridge is IDefiBridge {
     using SafeMath for uint256;
 
     address public immutable rollupProcessor;
-    address public constant weth = 0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2;
-    ISwapRouter public immutable swapRouter;
-    IUniswapV3Factory public immutable v3Factory;
+    address public weth;
     uint24 public constant poolFee = 3000; //0.3%
 
-    constructor(address _rollupProcessor, ISwapRouter _swapRouter, IUniswapV3Factory _v3Factory) public {
+    ISwapRouter public immutable swapRouter;
+    IUniswapV3Factory public immutable v3Factory;
+
+    constructor(address _rollupProcessor, address _swapRouter) public {
         rollupProcessor = _rollupProcessor;
-        swapRouter = _swapRouter;
-        v3Factory = _v3Factory;
+        swapRouter = ISwapRouter(_swapRouter);
+        weth = IPeripheryImmutableState(_swapRouter).WETH9();
+        v3Factory = IUniswapV3Factory(_swapRouter);
     }
 
     receive() external payable {}
@@ -70,7 +72,7 @@ contract UniswapBridge is IDefiBridge {
                     tokenIn: weth,
                     tokenOut: outputAssetA.erc20Address,
                     fee: poolFee,
-                    recipient: msg.sender,
+                    recipient: rollupProcessor,
                     deadline: block.timestamp,
                     amountIn: inputValue,
                     amountOutMinimum: 0,
@@ -92,7 +94,7 @@ contract UniswapBridge is IDefiBridge {
                     tokenIn: inputAssetA.erc20Address,
                     tokenOut: weth,
                     fee: poolFee,
-                    recipient: msg.sender,
+                    recipient: rollupProcessor,
                     deadline: block.timestamp,
                     amountIn: inputValue,
                     amountOutMinimum: 0,
